@@ -1,0 +1,1 @@
+<?php print count($rows); ?>

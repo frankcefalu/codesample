@@ -1,0 +1,6 @@
+name = Shurtape Products Navigation
+description = Navigation integration to lists Shurtape products categories and subcategories.
+core = 7.x
+package = Shurtape
+
+

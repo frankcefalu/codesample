@@ -1,0 +1,562 @@
+<?php
+
+/**
+ * @file
+ * Shurtape product detail landing page specific functionality and overrides.
+ */
+
+define('SHURTAPE_PRODUCT_DETAIL_MODULE_PATH', drupal_get_path('module', 'shurtape_products_detail'));
+require_once 'includes/shurtape_products_detail.helpers.inc';
+
+// ------------------------------------------------------------ core hooks
+/**
+ * Implementation of hook_menu().
+ */
+function shurtape_products_detail_menu() {
+	shurtape_products_detail_cache_clear();
+}
+
+
+/**
+ * Implementation of hook_taxonomy_vocabulary_update().
+ */
+function shurtape_products_detail_taxonomy_vocabulary_update($vocabulary) {
+	shurtape_products_detail_cache_clear();
+}
+
+
+/**
+ * Implementation of hook_taxonomy_vocabulary_delete().
+ */
+function shurtape_products_detail_taxonomy_vocabulary_delete($vocabulary) {
+	shurtape_products_detail_cache_clear();
+}
+
+
+/**
+ * Implementation of hook_taxonomy_term_update().
+ */
+function shurtape_products_detail_taxonomy_term_update($term) {
+	shurtape_products_detail_cache_clear();
+}
+
+
+/**
+ * Implementation of hook_taxonomy_term_delete().
+ */
+function shurtape_products_detail_taxonomy_term_delete($term) {
+	shurtape_products_detail_cache_clear();
+}
+
+
+/**
+ * Clear entries from cache
+ */
+function shurtape_products_detail_cache_clear() {
+
+	$vocabularies = taxonomy_get_vocabularies();
+	foreach($vocabularies as $vocabulary) {
+		if ($vocabulary->machine_name == 'auto_created_voc9_695' || $vocabulary->machine_name == 'markets'){
+			$tree = taxonomy_get_tree($vocabulary->vid, 0);
+			foreach ($tree as $term){
+				$url = drupal_lookup_path('alias', 'taxonomy/term/'.$term->tid);
+				$field 	= $vocabulary->machine_name == 'markets' ? "field_product_market_list" : "field_product_type";
+				$path 	= $vocabulary->machine_name == 'markets' ? "products/markets" : "products/type";
+				// Create an object with our redirect parameters
+				$redirect = new stdClass();
+				redirect_object_prepare($redirect);
+				$redirect->source = $url; // From URL
+				$redirect->source_options = array();
+				if (count(taxonomy_get_children($term->tid)) > 0) {
+					$redirect->redirect = $path;// To URL
+					$redirect->redirect_options = array("query" => array("t" => $term->tid));
+				} else {
+					$redirect->redirect = "search/products";// To URL
+					$redirect->redirect_options = array("query" => array("f[0]" => $field . ":" . $term->tid));
+				}
+				$redirect->status_code = 0; // Redirect Status, 0 is default
+				$redirect->type = 'redirect';
+				$redirect->language = LANGUAGE_NONE;
+
+				module_invoke('redirect', 'delete_by_path', $url);
+				module_invoke('redirect', 'save', $redirect);
+			}
+		}
+	}
+
+}
+
+
+
+
+function shurtape_products_detail_menu_alter(&$items) {
+	$items['taxonomy/term/%taxonomy_term']['page callback'] = 'shurtape_products_detail_term_redirect';
+}
+
+function shurtape_products_detail_term_redirect($term) {
+	$prefix = 'taxonomy/term/';
+	if ($term->vocabulary_machine_name == "auto_created_voc9_695") {
+		$children = taxonomy_get_children($term->tid);
+		$url = drupal_lookup_path('alias', 'taxonomy/term/'.$term->tid);
+		if (count($children) > 0) {
+
+		} else {
+
+		}
+
+		// Create an object with our redirect parameters
+		$redirect = new stdClass();
+		$redirect->source = $url; // From URL
+		$redirect->source_options = array();
+		$redirect->redirect = 'products'; // To URL
+		$redirect->redirect_options = array();
+		$redirect->status_code = 0; // Redirect Status, 0 is default
+		$redirect->type = 'redirect';
+		$redirect->language = LANGUAGE_NONE;
+
+		// Create the redirect
+		module_invoke('redirect', 'save', $redirect);
+		
+// 		$build = taxonomy_term_page($term);
+// 		//do you magic here
+// 		return $build;
+	} else {
+		$build = taxonomy_term_page($term);
+		//do you magic here
+		return $build;
+	}
+}
+
+function shurtape_products_detail_form_alter(&$form, &$form_state, $form_id) {
+	if (isset($form['#id'])
+			&& $form['#id'] == 'views-exposed-form-where-to-buy-page') {
+		$form['field_city_value']['#attributes']["placeholder"] = t(
+				'Enter your City');
+	}
+}
+
+/**
+ * Implements hook_system_info_alter()
+ * Adds a new "tray" region to the current theme
+ */
+function shurtape_products_detail_system_info_alter(&$info, $file, $type) {
+	$custom_theme = isset($theme) ? $theme
+			: variable_get('theme_default', 'bartik');
+	if ($file->name == $custom_theme) {
+		$info['regions'] = array_merge($info['regions'],
+				array('product_images_gallery' => t('Product Images Gallery')));
+		$info['regions'] = array_merge($info['regions'],
+				array('product_detail_links' => t('Product Detail Menu')));
+		$info['regions'] = array_merge($info['regions'],
+				array(
+						'product_sizes_colors_tab_content' => t(
+								'Product Details Sizes and Colors Tab')));
+		$info['regions'] = array_merge($info['regions'],
+				array(
+						'product_properties_tab_content' => t(
+								'Product Details Physical Properties Tab')));
+		$info['regions'] = array_merge($info['regions'],
+				array(
+						'product_downloads_tab_content' => t(
+								'Product Details Downloads Tab')));
+	}
+}
+
+/**
+ * Implements hook_theme().
+ */
+function shurtape_products_detail_theme($existing, $type, $theme, $path) {
+	return array(
+			// Custom
+			'node__product' => array('variables' => array(),
+					'template' => 'node--product',
+					'path' => SHURTAPE_PRODUCT_DETAIL_MODULE_PATH . '/theme',),
+			'field__field_product_market_list' => array('variables' => array(),
+					'template' => 'field--field_product_market_list',
+					'path' => SHURTAPE_PRODUCT_DETAIL_MODULE_PATH . '/theme',),
+			'field__field_product_applications' => array(
+					'variables' => array(),
+					'template' => 'field--field_product_applications',
+					'path' => SHURTAPE_PRODUCT_DETAIL_MODULE_PATH . '/theme',),
+			'field__field_related_products' => array('variables' => array(),
+					'template' => 'field--field_related_products',
+					'path' => SHURTAPE_PRODUCT_DETAIL_MODULE_PATH . '/theme',),
+			'field__field_product_videos' => array('variables' => array(),
+					'template' => 'field--field_product_videos',
+					'path' => SHURTAPE_PRODUCT_DETAIL_MODULE_PATH . '/theme',),);
+}
+
+/*
+ * Implements template_preprocess_field()
+ */
+function shurtape_products_detail_preprocess_field(&$vars) {
+	//check to see if the field is a boolean
+	if ($vars['element']['#field_type'] == 'list_boolean') {
+		//check to see if the value is TRUE
+		if ($vars['element']['#items'][0]['value'] == '1') {
+			//add the class .is-true
+			$vars['classes_array'][] = 'is-true';
+		} else {
+			//add the class .is-false
+			$vars['classes_array'][] = 'is-false';
+		}
+	}
+}
+
+function shurtape_products_detail_preprocess_page(&$vars) {
+	if (isset($vars['node'])) {
+		$breadcrumbs = shurtape_products_detail_get_breadcrumbs($vars['node']);
+		if (is_array($breadcrumbs)) {
+			drupal_set_breadcrumb($breadcrumbs);
+		}
+	}
+}
+
+function shurtape_products_detail_get_breadcrumbs($node) {
+	$links = null;
+	switch ($node->type) {
+	case 'product':
+		_shurtape_products_detail_link_taxonomy($links, $node,
+				'field_product_type');
+		break;
+	default:
+	case 'taxonomy':
+	case 'admin':
+	case 'user':
+	//extend by your own rules
+		return null;
+		break;
+	default:
+		return null;
+	}
+
+	$breadcrumbs = array();
+	if (isset($links)) {
+		$i = 0;
+		$last_item_number = count($links);
+		$last_item_link = variable_get(
+				'shurtape_products_detail_breadcrumb_last_item_link', TRUE);
+		foreach ($links as $key => $link) {
+			if (is_array($link)) {
+				switch ($link['href']) {
+				case '<none>':
+					$breadcrumbs[$i] = check_plain($link['title']);
+					break;
+				case '<front>':
+					$breadcrumbs[$i] = ($last_item_link
+							|| $i != $last_item_number) ? l($link['title'], '')
+							: check_plain($link['title']);
+					break;
+				default:
+					$breadcrumbs[$i] = ($last_item_link
+							|| $i != $last_item_number) ? l($link['title'],
+									$link['href']) : check_plain($link['title']);
+				}
+			}
+			$i++;
+		}
+	}
+	return $breadcrumbs;
+}
+
+function _shurtape_products_detail_link_taxonomy(&$links, $node, $field) {
+	// check if the node has classification settings
+	if (!empty($node->{$field})) {
+		$tids = array();
+		foreach ($node->{$field}['und'] as $tid) {
+			$tids[$tid['tid']] = $tid['tid'];
+		}
+		$terms = taxonomy_term_load_multiple($tids);
+
+		if (!empty($terms)) {
+			// find a term with parent items, taxonomy_get_parents_all() will
+			$term = null;
+			foreach ($terms as $term) {
+				$parents = taxonomy_get_parents_all($term->tid);
+				if (count($parents) > 1) {
+					// notice $parents contains the parents
+					// notice $term contains a term with a parent item
+					break;
+				}
+				$term = null;
+			}
+
+			// no hierarchical term found, take the first one from array
+			if (is_null($term)) {
+				$term = reset($terms);
+			}
+
+			$link = array();
+			$link[$term->tid] = array('title' => $term->name,
+					'href' => 'taxonomy/term/' . $term->tid,);
+			#$parents = taxonomy_get_parents_all($term->tid);
+			foreach ($parents as $parent) {
+				$link[$parent->tid] = array('title' => $parent->name,
+						'href' => 'taxonomy/term/' . $parent->tid,);
+			}
+			foreach (array_reverse($link) as $tid => $value) {
+				$links[$tid] = $value;
+			}
+		}
+	}
+}
+
+
+function shurtape_products_detail_feeds_after_parse(FeedsSource $source, FeedsParserResult $result) {
+	$i=0;
+	foreach ($result->items as $key => $data) {
+		$tids = array();
+		foreach ($data['market'] as $market){
+			list($lv1, $lv2, $lv3, $lv4) = explode(">",trim($market));
+			$tid = _shurtape_products_detail_getTermByLevels($lv1, $lv2, $lv3, $lv4);
+			if (isset($tid)){
+				$tids[] = $tid;
+			}
+		}
+		$result->items[$i]['market']= $tids;
+		$i++;
+	}
+}
+
+function _shurtape_products_detail_getTermByLevels($lv1, $lv2, $lv3, $lv4) {
+	$inner = "select ttd.tid, ttd.name, tth.parent from {taxonomy_term_data} ttd, {taxonomy_term_hierarchy} tth, {taxonomy_vocabulary} tv where ttd.tid = tth.tid and ttd.vid = tv.vid and tv.machine_name = 'markets'";
+	$query = "SELECT t1.tid AS lev1, t2.tid as lev2, t3.tid as lev3, t4.tid as lev4 FROM (" . $inner .") AS t1 LEFT JOIN (" . $inner .") AS t2 ON t2.parent = t1.tid LEFT JOIN (" . $inner .") AS t3 ON t3.parent = t2.tid LEFT JOIN (" . $inner .") AS t4 ON t4.parent = t3.tid WHERE ";
+	$binds = array();
+	if (isset($lv1)){
+		$query .= "t1.name = :name1 ";
+		$binds['name1'] = $lv1;
+	}
+	if (isset($lv2)){
+		$query .= "and t2.name = :name2 ";
+		$binds['name2'] = $lv2;
+	}
+	if (isset($lv3)){
+		$query .= "and t3.name = :name3 ";
+		$binds['name3'] = $lv3;
+	}
+	if (isset($lv4)){
+		$query .= "and t4.name = :name4 ";
+		$binds['name4'] = $lv4;
+	}
+	// find the vid
+	$result = db_query($query, $binds);
+	foreach ($result as $record) {
+		if (isset($lv4)){
+			return $record->lev4;
+		}
+		if (isset($lv3)){
+			return $record->lev3;
+		}
+		if (isset($lv2)){
+			return $record->lev2;
+		}
+		if (isset($lv1)){
+			return $record->lev1;
+		}
+	}
+	return FALSE;
+}
+
+function shurtape_products_detail_getTopMostParentByTid($term_tid) {
+	$parent_terms = taxonomy_get_parents_all($term_tid);
+	$top_parent_term = null;
+	//top parent term has no parents so find it out by checking if it has parents
+	foreach($parent_terms as $parent) {
+		$parent_parents = taxonomy_get_parents_all($parent->tid);
+		if ($parent_parents != false) {
+			//this is top parent term
+			$top_parent_term = $parent;
+		}
+	}
+	return isset($top_parent_term) ? $top_parent_term : FALSE;
+}
+
+function shurtape_products_detail_amazons3_url_info($local_path, $info) {
+	$info['https'] = TRUE;
+	return $info;
+}
+
+
+function shurtape_products_detail_image_default_styles() {
+	$styles = array();
+	// Exported image style: search-product-results.
+	$styles['product-thumbs'] = array(
+			'name' => 'product_thumbs',
+			'label' => 'Product thumbs (120x90)',
+			'effects' => array(
+					5 => array(
+							'label' => 'Scale',
+							'help' => 'Scaling will maintain the aspect-ratio of the original image. If only a single dimension is specified, the other dimension will be calculated.',
+							'effect callback' => 'image_scale_effect',
+							'dimensions callback' => 'image_scale_dimensions',
+							'form callback' => 'image_scale_form',
+							'summary theme' => 'image_scale_summary',
+							'module' => 'image',
+							'name' => 'image_scale',
+							'data' => array(
+									'width' => 120,
+									'height' => 90,
+									'upscale' => 0,
+							),
+							'weight' => 2,
+					),
+			),
+	);
+	$styles['home-market-callouts'] = array(
+			'name' => 'home_market_callouts',
+			'label' => 'Home Market Callouts (260x195)',
+			'effects' => array(
+					6 => array(
+							'label' => 'Scale',
+							'help' => 'Scaling will maintain the aspect-ratio of the original image. If only a single dimension is specified, the other dimension will be calculated.',
+							'effect callback' => 'image_scale_effect',
+							'dimensions callback' => 'image_scale_dimensions',
+							'form callback' => 'image_scale_form',
+							'summary theme' => 'image_scale_summary',
+							'module' => 'image',
+							'name' => 'image_scale',
+							'data' => array(
+									'width' => 260,
+									'height' => 195,
+									'upscale' => 0,
+							),
+							'weight' => 2,
+					),
+			),
+	);
+	$styles['product-detail-main-image'] = array(
+			'name' => 'product_detail_main_image',
+			'label' => 'Product Detail Main Image (400x300)',
+			'effects' => array(
+					6 => array(
+							'label' => 'Scale',
+							'help' => 'Scaling will maintain the aspect-ratio of the original image. If only a single dimension is specified, the other dimension will be calculated.',
+							'effect callback' => 'image_scale_effect',
+							'dimensions callback' => 'image_scale_dimensions',
+							'form callback' => 'image_scale_form',
+							'summary theme' => 'image_scale_summary',
+							'module' => 'image',
+							'name' => 'image_scale',
+							'data' => array(
+									'width' => 400,
+									'height' => 300,
+									'upscale' => 0,
+							),
+							'weight' => 2,
+					),
+			),
+	);
+	$styles['product-detail-thumbs'] = array(
+			'name' => 'product_detail_thumbs',
+			'label' => 'Product detail thumbs (75x75)',
+			'effects' => array(
+					7 => array(
+							'label' => 'Scale',
+							'help' => 'Scaling will maintain the aspect-ratio of the original image. If only a single dimension is specified, the other dimension will be calculated.',
+							'effect callback' => 'image_scale_effect',
+							'dimensions callback' => 'image_scale_dimensions',
+							'form callback' => 'image_scale_form',
+							'summary theme' => 'image_scale_summary',
+							'module' => 'image',
+							'name' => 'image_scale',
+							'data' => array(
+									'width' => 75,
+									'height' => 75,
+									'upscale' => 0,
+							),
+							'weight' => 1,
+					),
+					8 => array(
+							'label' => 'Define canvas',
+					        'help' => 'Define the size of the working canvas and background color, this controls the dimensions of the output image.',
+					        'effect callback' => 'canvasactions_definecanvas_effect',
+					        'dimensions callback' => 'canvasactions_definecanvas_dimensions',
+					        'form callback' => 'canvasactions_definecanvas_form',
+					        'summary theme' => 'canvasactions_definecanvas_summary',
+					        'module' => 'imagecache_canvasactions',
+					        'name' => 'canvasactions_definecanvas',
+					        'data' => array(
+					          'RGB' => array(
+					            'HEX' => '#FFFFFF',
+					          ),
+					          'under' => 1,
+					          'exact' => array(
+					            'width' => 75,
+					            'height' => 75,
+					            'xpos' => 'center',
+					            'ypos' => 'center',
+					          ),
+					          'relative' => array(
+					            'leftdiff' => '',
+					            'rightdiff' => '',
+					            'topdiff' => '',
+					            'bottomdiff' => '',
+					          ),
+					        ),
+					        'weight' => 3,
+					),
+			),
+	);
+	$styles['category-page'] = array(
+			'name' => 'category_page',
+			'label' => 'Category page (160x120)',
+			'effects' => array(
+					8 => array(
+							'label' => 'Scale',
+							'help' => 'Scaling will maintain the aspect-ratio of the original image. If only a single dimension is specified, the other dimension will be calculated.',
+							'effect callback' => 'image_scale_effect',
+							'dimensions callback' => 'image_scale_dimensions',
+							'form callback' => 'image_scale_form',
+							'summary theme' => 'image_scale_summary',
+							'module' => 'image',
+							'name' => 'image_scale',
+							'data' => array(
+									'width' => 160,
+									'height' => 120,
+									'upscale' => 0,
+							),
+							'weight' => 2,
+					),
+			),
+	);
+	$styles['category-page-marquee'] = array(
+			'name' => 'category_page_marquee',
+			'label' => 'Category page marquee (469x225)',
+			'effects' => array(
+					9 => array(
+							'label' => 'Scale',
+							'help' => 'Scaling will maintain the aspect-ratio of the original image. If only a single dimension is specified, the other dimension will be calculated.',
+							'effect callback' => 'image_scale_effect',
+							'dimensions callback' => 'image_scale_dimensions',
+							'form callback' => 'image_scale_form',
+							'summary theme' => 'image_scale_summary',
+							'module' => 'image',
+							'name' => 'image_scale',
+							'data' => array(
+									'width' => 469,
+									'height' => 225,
+									'upscale' => 0,
+							),
+							'weight' => 2,
+					),
+			),
+	);
+	return $styles;
+}
+
+function shurtape_products_detail_cron() {
+	foreach(image_styles() as $style) {
+		if ($style['module'] == 'shurtape_products_detail' && ($style['name'] == 'product-detail-thumbs' || $style['name'] == 'product-detail-main-image' || $style['name'] == 'product-thumbs')){
+			//$dest = image_style_path($style['name'], $uri);
+		}
+		
+// 		if ($style['name'] = 'thumbnail' || $style['name'] = 'medium'){
+// 			$dest = image_style_path($style['name'], $uri);
+// 			print ' '.$style['name']. ', ';
+// 			if (!file_exists($dest)) {
+// 				image_style_create_derivative($style, $uri, $dest);
+// 			}
+// 		}
+	}
+}
+

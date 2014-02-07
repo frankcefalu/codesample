@@ -1,0 +1,515 @@
+<?php
+
+/**
+ * @file
+ * Shurtape products categories and subcategories navigation.
+ */
+
+define('SHURTAPE_NAV_PATH', drupal_get_path('module', 'shurtape_products_nav'));
+
+// ------------------------------------------------------------ core hooks
+
+/**
+ * Implements hook_theme().
+ */
+function shurtape_products_nav_theme($existing, $type, $theme, $path) {
+
+  return array(
+    // Custom
+    'products_filter_bar' => array(
+      'variables' => array(),
+      'template'  => 'products-filter-bar',
+      'path'      => SHURTAPE_NAV_PATH . '/theme',
+    ),
+    'views_view_unformatted__product_count__by_term_id' => array(
+      'variables' => array(),
+      'template'  => 'views-view-unformatted--product-count--by-term-id',
+      'base hook' => 'views_view_unformatted',
+      'path'      => SHURTAPE_NAV_PATH . '/theme',
+    ),
+    'views_view_fields__product_count__by_term_id' => array(
+      'variables' => array(),
+      'template'  => 'views-view-fields--product-count--by-term-id',
+      'base hook' => 'views_view_fields',
+      'path'      => SHURTAPE_NAV_PATH . '/theme',
+    ),
+  );
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function shurtape_products_nav_block_info() {
+
+  $blocks['products_categories_nav'] = array(
+    'info' => t('Products Categories Navigation'),
+    'cache' => DRUPAL_CACHE_GLOBAL,
+    'region' => 'sidebar_first',
+  );
+
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function shurtape_products_nav_block_view($delta = '') {
+
+  // This example is adapted from node.module.
+  $block = array();
+
+  switch ($delta) {
+
+    case 'products_categories_nav':
+
+      $block['subject'] = '<none>';
+      $block['content'] = _get_products_categories_navigation();
+      break;
+  }
+  return $block;
+}
+
+/**
+ * Implements hook_block_configure().
+ */
+function shurtape_products_nav_block_configure($delta = '') {
+  // This example comes from node.module.
+  $form = array();
+  if ($delta == 'products_categories_nav') {
+
+    $vocs = _get_vocabulary_by_vocabulary_name('Tape Type');
+
+    foreach($vocs['all'] as $voc) {
+      $options[$voc->vid] = $voc->name;
+    }
+
+    $form['nav_vid'] = array(
+      '#type' => 'select',
+      '#title' => t('Select which vocabulary you want to display'),
+      '#default_value' => variable_get('nav_vid', $vocs['selected']->vid),
+      '#options' => $options,
+    );
+
+    $form['nav_level'] = array(
+      '#type' => 'select',
+      '#title' => t('How many levels should be displayed'),
+      '#default_value' => variable_get('nav_level', 1),
+      '#options' => array(1 => 'level 1', 2 => 'level 2', 3 => 'level 3', 4 => 'level 4'),
+    );
+
+  }
+  return $form;
+}
+
+/**
+ * Implements hook_block_save().
+ */
+function shurtape_products_nav_block_save($delta = '', $edit = array()) {
+
+  switch($delta) {
+
+    case 'products_categories_nav' :
+
+      variable_set('nav_vid', $edit['nav_vid']);
+      variable_set('nav_level', $edit['nav_level']);
+
+      break;
+  }
+}
+
+// ------------------------------------------------------ helper functions
+
+/**
+ * Returns a vocabulary name given a vocabulary object.
+ *
+ * @param str $vname
+ *   The real vocabulary name to match against.
+ */
+function _get_vocabulary_by_vocabulary_name($vname) {
+
+  $vocabularies = array(
+    'all' => taxonomy_get_vocabularies(),
+    'selected' => NULL,
+  );
+
+  foreach($vocabularies['all'] as $voc) {
+    if($voc->name == $vname) {
+      $vocabularies['selected'] = $voc;
+    }
+  }
+
+  return $vocabularies;
+}
+
+/**
+ * Handles the 'products_categories_nav' block content.
+ */
+function _get_products_categories_navigation() {
+
+  $tid = 'all';
+  $vid = NULL;
+
+  if(isset($_GET['t']) && is_numeric($_GET['t'])) {
+    $tid = $_GET['t'];
+  } elseif(isset($_GET['field_product_type']) && is_numeric($_GET['field_product_type'])) {
+    $tid = $_GET['field_product_type'];
+  }
+
+  if(arg(1)) {
+    $vid = arg(1);
+  }
+
+  if(isset($_GET['f']) && is_array($_GET['f'])) {
+    $getf = $_GET['f'];
+    $getf = explode(':', $getf[0]);
+    if($getf[0] == 'field_product_type') {
+      $vid = 'type';
+    } elseif($getf[0] == 'field_product_market_list') {
+      $vid = 'markets';
+    }
+    if(isset($getf[1])) {
+      $tid = $getf[1];
+    }
+  }
+
+  $vars['search_page'] = FALSE;
+  if(arg(0) == 'search') {
+    $vars['search_page'] = TRUE;
+  }
+
+  // Set default "open" class.
+  $vid_clean = strtolower(str_replace(' ', '_', $vid));
+
+  $vars['browse_' . $vid_clean . '_css_class'] = 'open';
+
+  $vars['total_products'] = strip_tags(views_embed_view('product_count', 'by_term_id', $tid));
+
+  $vars['browse_markets'] = _get_browse_products_rendered('Markets', 5);
+
+  $vars['browse_type'] = _get_browse_products_rendered('Tape Type', 5);
+
+  $vars['filters'] = shurtape_products_nav_generate_filters();
+
+  $vars['product_assets'] = module_invoke('facetapi', 'block_view', 'F1p1jU7Y1BKlLyRFvGgiNd8D4E1kpGiw');
+
+  $vars['total_product_assets'] = count($vars['product_assets']['content']['field_product_assets']['#items']);
+
+
+  if(arg(0) == "search" && isset($vars['facet_nodeid']['content']['nid']['#items'])){
+       $vars['total_products'] =  count($vars['facet_nodeid']['content']['nid']['#items']);
+  }
+
+  $f_array = isset($_GET['f']) ? $_GET['f'] : NULL;
+
+  $vars['link_results'] = "";
+  $vars['link_other_results'] = "";
+
+  if(arg(0) == "search" && arg(1) == "products"):
+
+      if(!is_null($f_array)):
+        for($i=0;$i<count($f_array);$i++):
+          if(!isset($link['output'])){
+            $link['output'] = sprintf("f[%s]=%s",$i,addslashes($f_array[$i]));
+          }else{
+            $link['output'] .= sprintf("&f[%s]=%s",$i,addslashes($f_array[$i]));
+          }
+        endfor;
+      endif;
+
+        if(isset($_GET['search_api_views_fulltext'])){
+          if(!isset($link['output'])){
+          $link['output'] = sprintf("search_api_views_fulltext=%s",addslashes($_GET['search_api_views_fulltext']));
+          }else{
+          $link['output'] .= sprintf("&search_api_views_fulltext=%s",addslashes($_GET['search_api_views_fulltext']));
+          }
+        }
+
+        if(isset($_GET['items_per_page'])){
+          if(!isset($link['output'])){
+          $link['output'] = sprintf("items_per_page=%s",addslashes($_GET['items_per_page']));
+          }else{
+          $link['output'] .= sprintf("&items_per_page=%s",addslashes($_GET['items_per_page']));
+          }
+        }
+
+        if(isset($_GET['page'])){
+          if(!isset($link['output'])){
+          $link['output'] = sprintf("page=%s",addslashes($_GET['page']));
+          }else{
+          $link['output'] .= sprintf("&page=%s",addslashes($_GET['page']));
+          }
+        }
+
+      if(!isset($link['output'])){
+          $link['output'] = "";
+      }else{
+          $link['output'] = "?".$link['output'];
+      }
+
+      $vars['link_results'] = "/search/products".$link['output'];
+      $vars['link_other_results'] = "/search/products/other".$link['output'];
+
+  else:
+
+    $link_results_append = '';
+    if(is_numeric($tid)) {
+      $link_results_append = "?f[0]=field_product_type:$tid";
+    }
+
+    $vars['link_results'] = "/search/products{$link_results_append}";
+
+  endif;
+
+  return theme('products_filter_bar', $vars);
+
+}
+
+/**
+ * Returns a fully rendered vocabulary filter menu.
+ *
+ * @param str $voc_name
+ *   The vocabulary name to match against.
+ * @param int $level
+ *   The number of term levels (children) to return.
+ */
+function _get_browse_products_rendered($voc_name, $level = 1, $search_links = FALSE) {
+
+  $vocs = _get_vocabulary_by_vocabulary_name($voc_name);
+
+  $type_vid = variable_get('nav_vid', $vocs['selected']->vid);
+
+  if(!$type_vid) {
+    return t('A vocabulary for the "@voc_name" must be selected', array('@voc_name' => $voc_name));
+  }
+
+  $tree = taxonomy_get_nested_tree($type_vid, array('max_depth' => $level));
+
+  return taxonomy_nested_tree_render($tree, FALSE, $search_links, $voc_name);
+}
+
+/**
+ * Builds and returns a nested tree.
+ *
+ * @param array $opts
+ *   An array of options.
+ * @return array
+ */
+function taxonomy_get_nested_tree($vtid = array(), $opts = array()) {
+
+  $return = array();
+
+  // We only want to fetch from the non-recursive call.
+  if(!is_array($vtid)) {
+    $cache_key_append = '';
+    if(isset($opts['full_entity'])) {
+        $cache_key_append = '_full';
+    }
+    $cache_key = "shurtape_nav_tree_vid_{$vtid}{$cache_key_append}";
+    if($return = cache_get($cache_key, 'cache')) {
+      return $return->data;
+    }
+  }
+
+  $max_depth = isset($opts['max_depth']) ? $opts['max_depth'] : NULL;
+  $parent = isset($opts['parent']) ? $opts['parent'] : 0;
+  $parents_index = isset($opts['parents_index']) ? $opts['parents_index'] : array();
+  $depth = isset($opts['depth']) ? $opts['depth'] : 0;
+  $full_entity = isset($opts['full_entity']) ? $opts['full_entity'] : FALSE;
+
+  if (!is_array($vtid)) {
+    $vtid = taxonomy_get_tree($vtid, 0, NULL, $full_entity);
+  }
+
+  foreach ($vtid as $term) {
+    foreach ($term->parents as $term_parent) {
+      if ($term_parent == $parent) {
+        $return[$term->tid] = $term;
+      }
+      else {
+        $parents_index[$term_parent][$term->tid] = $term;
+      }
+    }
+  }
+
+  if($return) {
+    foreach ($return as &$term) {
+      if (isset($parents_index[$term->tid]) && (is_null($max_depth) || $depth < $max_depth)) {
+
+        $opts_rec = array('max_depth' => $max_depth, 'parent' => $term->tid, 'parents_index' => $parents_index, 'depth' => $depth + 1);
+
+        $term->children = taxonomy_get_nested_tree($parents_index[$term->tid], $opts_rec);
+      }
+    }
+  }
+
+  // Make sure to only cached at the end of recursive calls.
+  if(isset($cache_key) && $cache_key) {
+    // Don't cache empty object.
+    if($return) {
+      cache_set($cache_key, $return, 'cache', CACHE_PERMANENT);
+    }
+  }
+
+  return $return;
+}
+
+/**
+ * Builds a renderable nested taxonomy list.
+ *
+ * @param array $tree
+ * @param string $recurring
+ * @return multitype
+ *   A rendererable object.
+ */
+function taxonomy_nested_tree_render($tree, $recurring = FALSE, $search_links = FALSE, $voc_name = NULL) {
+
+  $items = array();
+  $tid = NULL;
+
+  if(isset($_GET['t']) && is_numeric($_GET['t'])) {
+    $tid = $_GET['t'];
+  } elseif(isset($_GET['f'])) {
+    $fget = $_GET['f'];
+    if($fget) {
+      $fget = explode(':', $fget[0]);
+      $tid = $fget[1];
+    }
+  }
+
+  // We only want to fetch from the non-recursive call.
+  if(!$recurring) {
+    $cache_key_append = strtolower(str_replace(' ', '_', $voc_name));
+    $cache_key = "shurtape_nav_tree_items_{$cache_key_append}_{$tid}";
+    if($items = cache_get($cache_key, 'cache')) {
+      return $items->data;
+    }
+  }
+
+  $tid_parents = array();
+  if($tid) {
+    foreach(taxonomy_get_parents_all($tid) as $parent) {
+      $tid_parents[$parent->tid] = $parent->tid;
+    }
+  }
+
+  if (count($tree)) {
+    foreach ($tree as $term) {
+      $item = array('data' => l($term->name, "taxonomy/term/{$term->tid}"));
+
+      if (isset($term->children) && ($tid == $term->tid || isset($tid_parents[$term->tid]))) {
+        $item['class'] = array('class' => 'open');
+        $item["children"] = taxonomy_nested_tree_render($term->children, TRUE);
+      }
+
+      $items[] = $item;
+    }
+  }
+
+  if ($recurring) {
+    return $items;
+  }
+
+  $return = array(
+    '#theme' => 'item_list',
+    '#items' => $items,
+    '#attributes' => array('class' => 'toggle_target  '),
+  );
+
+  if($items) {
+    cache_set($cache_key, $return, 'cache', CACHE_PERMANENT);
+  }
+
+  return $return;
+}
+
+
+
+/*
+* Helper Functions For Building Filters Out
+*
+*/
+
+  function shurtape_products_nav_generate_filters(){
+
+    // Adhesive Facet xH1Twe80Ztkb3gBmLcYd9z4pV3tXKHYS
+    // Backing Facet t0No50NMYFJ6A46rvE1GW0Eyq8xyA2D8
+    // Liner Facet m9muCpNAwXi2JUhGfm32jUfFxdLu1BIZ
+    // Box Weight Facet oYpm22zWhQ91I8A9UCiO1N900uDFRoIl
+    // Handling Conditions Facet 5yYen93hSx8qnWEN4TGY10Q3BoFi3RpC
+    // FDA Compliance Facet otbZMmxtBIvFD1wiOrk0YoPy4tSPvD1X
+    // Holding Power Facet 4Fz3Dl6NCm1Q5JkfTklKfxcZU1ahKTg9
+    // Cold Temp Facet 5N7eo9iRI0TlUjmYaEfHM7dDNKm3f0PM
+    // UV Resistance Facet O6wEc4yQyvxsqzYX2gdD7g3B3Jda5G7S
+    // Water Proof Facet Fndyn0XCzZ2fhKcwcdati8u0oU1q59sK
+    // Green Point Facet DI0sG30v9RoGLcUpPAoyXZbiEIm3EKO3
+    // UL723 Facet 08e0gIp8tw73PqzZJHJmcgtriIG7GckQ
+    // UL Listed Facet 2ygQZHNQRdc8v7TLr116aAyQayftL1Ta
+    // Clean Removal Facet gEPNXsibDMPdLHwrEAwPl0fduFyWEigO
+    // Carpet Tape Facet SdLkCXiMRtYABNTzlcAmV1hTcmukUEWH
+
+    // Packaging TID - 201
+    // Cloth & Duct Tapes TID - 184
+    // Double Coat TID - 234
+    // Paper Tapes TID - 170
+    // Foil TID - 224
+
+    // instantiate facets
+      $getfacets = views_embed_view('search');
+
+      // Set Facet Blocks Available
+      $facets_array[201] = array("oYpm22zWhQ91I8A9UCiO1N900uDFRoIl","5yYen93hSx8qnWEN4TGY10Q3BoFi3RpC","5N7eo9iRI0TlUjmYaEfHM7dDNKm3f0PM","otbZMmxtBIvFD1wiOrk0YoPy4tSPvD1X","4Fz3Dl6NCm1Q5JkfTklKfxcZU1ahKTg9","O6wEc4yQyvxsqzYX2gdD7g3B3Jda5G7S");
+      $facets_array[184] = array("Fndyn0XCzZ2fhKcwcdati8u0oU1q59sK","DI0sG30v9RoGLcUpPAoyXZbiEIm3EKO3","08e0gIp8tw73PqzZJHJmcgtriIG7GckQ","2ygQZHNQRdc8v7TLr116aAyQayftL1Ta","O6wEc4yQyvxsqzYX2gdD7g3B3Jda5G7S","m9muCpNAwXi2JUhGfm32jUfFxdLu1BIZ");
+      $facets_array[234] = array("xH1Twe80Ztkb3gBmLcYd9z4pV3tXKHYS","SdLkCXiMRtYABNTzlcAmV1hTcmukUEWH","m9muCpNAwXi2JUhGfm32jUfFxdLu1BIZ");
+      $facets_array[170] = array("gEPNXsibDMPdLHwrEAwPl0fduFyWEigO","O6wEc4yQyvxsqzYX2gdD7g3B3Jda5G7S");
+      $facets_array[224] = array("Fndyn0XCzZ2fhKcwcdati8u0oU1q59sK","O6wEc4yQyvxsqzYX2gdD7g3B3Jda5G7S","DI0sG30v9RoGLcUpPAoyXZbiEIm3EKO3","2ygQZHNQRdc8v7TLr116aAyQayftL1Ta","m9muCpNAwXi2JUhGfm32jUfFxdLu1BIZ","xH1Twe80Ztkb3gBmLcYd9z4pV3tXKHYS");
+      $facets_array[499] = array("O6wEc4yQyvxsqzYX2gdD7g3B3Jda5G7S","DI0sG30v9RoGLcUpPAoyXZbiEIm3EKO3","2ygQZHNQRdc8v7TLr116aAyQayftL1Ta");
+
+      $f_array = isset($_GET['f']) ? $_GET['f'] : NULL;
+      $t_array = isset($_GET['t']) ? $_GET['t'] : NULL;
+
+
+      if($f_array != NULL){
+      $extracted_values = explode(":", $f_array[0]);
+        if($extracted_values[0] == "field_product_type"){
+            $sortTID = taxonomy_get_parents_all($extracted_values[1]);
+        }
+      }elseif($t_array != NULL){
+            $sortTID = taxonomy_get_parents_all($t_array);
+      }
+
+
+
+      if(isset($sortTID) && is_array($sortTID)){
+         krsort ($sortTID);
+
+        foreach($sortTID as $id => $value):
+            $parentTID = $value->tid;
+            break;
+        endforeach;
+
+        if(isset($facets_array[$parentTID])){
+            $currentFacet = $facets_array[$parentTID];
+
+            for($i=0;$i<count($currentFacet);$i++):
+
+            if(isset($currentFilter)){unset($currentFilter);}
+              $currentFilter = module_invoke('facetapi', 'block_view', $currentFacet[$i]);
+
+              if(!is_null($currentFilter)){$filters[]= $currentFilter;}
+
+            endfor;
+
+            return $filters;
+
+        }
+
+      }
+
+
+
+
+}
+
+
+
+

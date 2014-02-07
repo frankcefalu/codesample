@@ -1,0 +1,14 @@
+name = Shurtape Products Detail Page
+description = Page integration to render Shurtape product detail landing pages.
+core = 7.x
+package = Shurtape
+engine = phptemplate
+dependencies[] = redirect
+dependencies[] = imagecache_canvasactions
+
+features[image][] = product-thumbs
+features[image][] = home-market-callouts
+features[image][] = product-detail-main-image
+features[image][] = category-page
+features[image][] = home-vignettes
+features[image][] = category-page-marquee
