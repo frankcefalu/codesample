@@ -1,0 +1,10 @@
+name = Master HCP
+description = Master HCP
+package = JnJ Apps
+core = 7.x
+configure = admin/config/people/janrain/medpro
+files[] = includes/JanrainMedProApi.inc
+dependencies[] = janrain
+apps[author] = JnJ
+apps[author_url] = http://www.jnj.com/
+apps[package] = CANVAS Apps

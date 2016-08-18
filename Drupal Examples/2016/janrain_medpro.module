@@ -1,0 +1,323 @@
+<?php
+/**
+ * @file
+ * Janrain Med Pro module file.
+ * Author: Frank Cefalu
+ */
+
+define('JANRAIN_MEDPRO_ACCESS_TOKEN_VALUE', 'janrain_medpro_');
+
+/**
+ * Implements hook_menu().
+ */
+function janrain_medpro_menu() {
+  $items['admin/config/people/janrain/medpro'] = array(
+    'title' => 'MedPro',
+    'description' => 'Configure Janrain MedPro settings.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('janrain_medpro_admin_form'),
+    'access arguments' => array('administer janrain'),
+    'file' => 'includes/janrain_medpro.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+  ); 
+
+  $items['admin/config/people/janrain/medpro/test'] = array(
+  'title' => 'test',
+  'page callback' => 'janrain_medpro_test_validate',
+  'access arguments' => array('administer janrain'),
+ );
+
+
+
+  $items['admin/config/people/janrain/medpro/settings'] = array(
+    'title' => 'Settings',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => 0,
+  );
+
+  $items['admin/config/people/janrain/medpro/error_messages'] = array(
+    'title' => 'Error Messages',
+    'description' => 'Configure Janrain MedPro Error Messages.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('janrain_medpro_error_messages_form'),
+    'access arguments' => array('administer janrain'),
+    'file' => 'includes/janrain_medpro.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 1,
+  );
+
+  $items['admin/config/people/janrain/medpro/fields'] = array(
+    'title' => 'Fields',
+    'description' => 'Configure Janrain MedPro Fields.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('janrain_medpro_fields_form'),
+    'access arguments' => array('administer janrain'),
+    'file' => 'includes/janrain_medpro.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 2,
+  );
+
+  $items['admin/config/people/janrain/medpro/promo_codes'] = array(
+    'title' => 'Promo Codes',
+    'description' => 'Configure Janrain MedPro Promo Codes.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('janrain_medpro_promo_codes_form'),
+    'access arguments' => array('administer janrain'),
+    'file' => 'includes/janrain_medpro.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 3,
+  );
+
+  $items['janrain_medpro/validate/Practitioner'] = array(
+    'title' => 'validatePractitioner',
+    'description' => 'Validate Practitioner data',
+    'page callback' => 'janrain_medpro_validate',
+    'page arguments' => array(2),
+    'access callback' => 'janrain_medpro_validate_access',
+    'delivery callback' => 'janrain_medpro_validate_ajax_deliver',
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_init().
+ */
+function janrain_medpro_init() {
+  $capture_enforce = variable_get('janrain_capture_enforce', FALSE);
+
+  $session = (bool) variable_get('janrain_medpro_validate_session', TRUE);
+  $token = _janrain_medpro_get_token(JANRAIN_MEDPRO_ACCESS_TOKEN_VALUE, $session);
+  $fields = variable_get('janrain_medpro_validate_fields', array());
+  $promo_codes = variable_get('janrain_medpro_promo_codes', '');
+  $promo_codes = explode(',', $promo_codes);
+  $promo_codes = array_map('trim', $promo_codes);
+  $js = array(
+    'token' => $token,
+    'fields' => $fields,
+    'promo_codes' => $promo_codes,
+    'promo_codes_error_message' => variable_get('janrain_medpro_promo_codes_error_message', ''),
+    'fail_limit' => variable_get('janrain_medpro_fail_limit', 0),
+  );
+
+  drupal_add_js(
+    array('janrain_medpro' => $js),
+    'setting'
+  );
+
+  // Only if we're enforcing capture should we make available the
+  // janrainCaptureWidgetOnLoad function.  This let's the Janrain UI start
+  // once the application has bootstrapped.
+  if ($capture_enforce) {
+    // Attach the capture widget onload function to start the UI. This behavior
+    // must run before the janrain.js behavior.
+    drupal_add_js(drupal_get_path('module', 'janrain_medpro') . '/js/janrain_medpro.js', array(
+        'type' => 'file',
+        'every_page' => TRUE,
+        'weight' => 1,
+        'preprocess' => FALSE,
+        'scope' => 'header',
+      )
+    );
+  }
+}
+
+/**
+ * Generates a token based on $value, the user session, and the private key.
+ *
+ * @param string $value
+ *   An additional value to base the token on.
+ * @param bool $session
+ *   (optional) A boolean value indicating whether the user's session is
+ *   required when generating the token. Most tokens are based on the session,
+ *   but in a situation where a session is not available or not needed a FALSE
+ *   value may be used to depend on the user IP address instead. Defaults to
+ *   TRUE.
+ *
+ * @return string
+ *   A 43-character URL-safe token for validation, based on the user session ID,
+ *   the hash salt provided from drupal_get_hash_salt(), and the
+ *   'drupal_private_key' configuration variable.
+ *
+ * @see drupal_get_hash_salt()
+ */
+function _janrain_medpro_get_token($value = '', $session = TRUE) {
+  global $user;
+  $session_id = $session || !empty($user->session) ? session_id() : ip_address();
+  return drupal_hmac_base64($value, $session_id . drupal_get_private_key() . drupal_get_hash_salt());
+}
+
+/**
+ * Validates a token based on $value, the user session, and the private key.
+ *
+ * @param string $token
+ *   The token to be validated.
+ * @param string $value
+ *   An additional value to base the token on.
+ * @param bool $session
+ *   (optional) A boolean value indicating whether the user's session is
+ *   required when generating the token.
+ *
+ * @return bool
+ *   True for a valid token, false for an invalid token. When $skip_anonymous
+ *   is true, the return value will always be true for anonymous users.
+ */
+function _janrain_medpro_valid_token($token, $value = '', $session = TRUE) {
+  return $token === _janrain_medpro_get_token($value, $session);
+}
+
+/**
+ * Access callback for validate menu item.
+ */
+function janrain_medpro_validate_access() {
+  $token = !empty($_REQUEST['token']) ? trim($_REQUEST['token']) : '';
+  $session = (bool) variable_get('janrain_medpro_validate_session', TRUE);
+  return variable_get('janrain_medpro_validate_token_check', FALSE) ? _janrain_medpro_valid_token($token, JANRAIN_MEDPRO_ACCESS_TOKEN_VALUE, $session) : TRUE;
+}
+
+/**
+ * Page validate callback.
+ *
+ * @param string $type
+ *   Validate type, supported values are 'Practitioner'.
+ *
+ * @return string
+ *   Return json encoded string.
+ */
+function janrain_medpro_validate($type) {
+  switch ($type) {
+    case "Practitioner":
+      $result = janrain_medpro_validate_practitioner();
+      break;
+
+    default:
+      $result = array(
+        'status' => 'error',
+        'error_message' => t('Unsupported validate type "@type"', $type),
+      );
+  }
+  return $result;
+}
+
+/**
+ * Packages and sends the result of a page callback as an Ajax response.
+ */
+function janrain_medpro_validate_ajax_deliver($page_callback_result) {
+  drupal_add_http_header('Content-Type', 'application/json; charset=utf-8');
+  if (is_int($page_callback_result)) {
+    $result = array(
+      'status' => 'error',
+      'result' => array(),
+    );
+    switch ($page_callback_result) {
+      case MENU_NOT_FOUND:
+        $result['error_message'] = t('The requested page could not be found.');
+        break;
+
+      case MENU_ACCESS_DENIED:
+        $result['error_message'] = t('You are not authorized to access this page.');
+        break;
+
+      case MENU_SITE_OFFLINE:
+        $result['error_message'] = t(filter_xss_admin(variable_get('maintenance_mode_message',
+          t('@site is currently under maintenance. We should be back shortly. Thank you for your patience.', array('@site' => variable_get('site_name', 'Drupal'))))));
+        break;
+    }
+
+    $json = drupal_json_encode($result);
+  }
+  else {
+    $json = drupal_json_encode($page_callback_result);
+  }
+
+  print $json;
+
+  // Perform end-of-request tasks.
+  ajax_footer();
+}
+
+function janrain_medpro_test_validate(){
+
+/*
+$_REQUEST['FirstName'] = "Sally";
+$_REQUEST['LastName'] = "Powell";
+$_REQUEST['StateLicNum'] = "20010128136";
+$_REQUEST['LicStateId'] = "MO";
+
+
+
+print_r(janrain_medpro_validate_practitioner());
+*/
+
+}
+
+
+
+/**
+ * Validate practitioner.
+ */
+function janrain_medpro_validate_practitioner() {
+  $url = variable_get('janrain_medpro_webserviceid_url', '');
+  $user = variable_get('janrain_medpro_webserviceid_username', '');
+  $pass = variable_get('janrain_medpro_webserviceid_password', '');
+  $api = new JanrainMedProApi($url, $user, $pass);
+  $FirstName = !empty($_REQUEST['FirstName']) ? check_plain(filter_xss($_REQUEST['FirstName'])) : '';
+  $MiddleInit = !empty($_REQUEST['MiddleInit']) ? check_plain(filter_xss($_REQUEST['MiddleInit'])) : '';
+  $LastName = !empty($_REQUEST['LastName']) ? check_plain(filter_xss($_REQUEST['LastName'])) : '';
+  $StateLicNum = !empty($_REQUEST['StateLicNum']) ? check_plain(filter_xss($_REQUEST['StateLicNum'])) : '';
+  $LicStateId = !empty($_REQUEST['LicStateId']) ? check_plain(filter_xss($_REQUEST['LicStateId'])) : '';
+  $api->setResultType('xml');
+  $api->setDelimiter('~');
+  $api->setArgument('first-name', $FirstName);
+  $api->setArgument('last-name', $LastName);
+  $api->setArgument('sln-state-license-number', $StateLicNum);
+  $api->setArgument('state-of-license', $LicStateId);
+  $api->setArgument('match-type', 'S');
+  $api->setArgument('action-type', 'D');
+  $api->setArgument('user-name', $user);
+  $api->setArgument('password', $pass);
+  $result = $api->validatePractitioner();
+
+ return $result;
+}
+
+/**
+ * Multiple callback for fail messages variable info.
+ */
+function _janrain_medpro_variable_multiple_fail_messages($variable, $options) {
+  return array(
+    1 => t('Promo code error message #1', array(), $options),
+    2 => t('Promo code error message #2', array(), $options),
+    3 => t('Promo code error message #3', array(), $options),
+  );
+}
+
+/**
+ * Implements hook_preprocess_HOOK().
+ */
+function janrain_medpro_preprocess_janrain_screen(&$variables) {
+  if ($variables['screen'] == 'signin' || $variables['screen'] == 'edit-profile') {
+    $top_message = variable_get('janrain_medpro_registration_top_message', array());
+    $variables['registration_top_message'] = !empty($top_message['value']) ? check_markup($top_message['value'], $top_message['format']) : '';
+
+    $top_message = variable_get('janrain_medpro_login_top_message', array());
+    $variables['login_top_message'] = !empty($top_message['value']) ? check_markup($top_message['value'], $top_message['format']) : '';
+
+    $fail_messages = _janrain_medpro_variable_multiple_fail_messages(array(), array());
+
+    foreach ($fail_messages as $key => $title) {
+      $message = variable_get('janrain_medpro_fail_messages_' . $key, array());
+      $message = !empty($message['value']) ? check_markup($message['value'], $message['format']) : '';
+      $variables['fail_messages']['janrain_medpro_fail_messages_' . $key] = array(
+        '#type' => 'html_tag',
+        '#tag' => 'div',
+        '#value' => $message,
+        '#attributes' => array(
+          'id' => 'fail-message-' . $key,
+          'class' => array('fail-message'),
+          'style' => 'display:none;',
+        ),
+      );
+    }
+  }
+}
