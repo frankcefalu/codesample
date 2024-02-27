@@ -1,0 +1,10 @@
+carlylegirms_click:
+  version: 1.x
+  js:
+    js/custom.js: {}
+    js/nda-carlyle.js: {}
+  dependencies:
+    - core/jquery
+    - core/jquery.once
+    - core/drupal
+    - core/drupal.dialog.ajax

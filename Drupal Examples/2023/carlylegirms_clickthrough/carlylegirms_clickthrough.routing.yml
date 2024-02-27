@@ -1,0 +1,45 @@
+clickthrough.admin_settings_form:
+  path: '/admin/config/clickthrough/adminsettings'
+  defaults:
+    _form: '\Drupal\carlylegirms_clickthrough\Form\NdaAgreementConfigForm'
+    _title: 'NDA Agreement Settings'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    _admin_route: TRUE
+
+clickthrough.nda_agreement_form:
+  path: '/user/agreement'
+  defaults:
+    _controller: '\Drupal\carlylegirms_clickthrough\Controller\CarlyleNdaAgreement::ndaAgreementBuild'
+    _title: 'NDA Agreement'
+  requirements:
+    _user_is_logged_in: 'TRUE'
+
+carlyle.login:
+  path: '/carlyle/login'
+  defaults:
+    _controller: '\Drupal\carlylegirms_clickthrough\Controller\CarlyleLogin::loginBuild'
+    _title: 'Login'
+  requirements:
+    # Login page should be available to all visitors.
+    _access: 'TRUE'
+
+carlyle.register:
+  path: '/carlyle/register'
+  defaults:
+    _controller: '\Drupal\carlylegirms_clickthrough\Controller\CarlyleRequestAccess::registerBuild'
+    _title: 'Register'
+  requirements:
+    # CarlyleAgreementSubscriber is used to redirect to /user if the user is
+    # logged in. The usual _role: 'anonymous' prevents that happening.
+    _access: 'TRUE'
+
+clickthrough.nda_agreement_form_modal:
+  path: '/admin/config/clickthrough/NdaAgreementForm'
+  defaults:
+    _form: '\Drupal\carlylegirms_clickthrough\Form\NdaAgreementForm'
+    _title: 'NON-DISCLOSURE AGREEMENT'
+  requirements:
+    _user_is_logged_in: 'TRUE'
+  

@@ -1,0 +1,165 @@
+<?php
+
+/**
+ * @file
+ * Contains carlylegirms_clickthrough.module.
+ */
+
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Url;
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function carlylegirms_clickthrough_form_user_register_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // Only alter the non-admin user register form.
+  $current_url = Url::fromRoute('<current>');
+  $path = $current_url->toString();
+  $field_email = NULL;
+  if ($path === '/carlyle/register') {
+    $form['field_first_name']['widget'][0]['value']['#weight'] = -10;
+    $form['field_first_name']['widget'][0]['value']['#placeholder'] = t('FIRST NAME');
+    $form['field_first_name']['widget'][0]['value']['#title'] = '';
+    $form['field_last_name']['widget'][0]['value']['#weight'] = -5;
+    $form['field_last_name']['widget'][0]['value']['#placeholder'] = t('LAST NAME');
+    $form['field_last_name']['widget'][0]['value']['#title'] = '';
+    $form['field_company_name']['widget'][0]['value']['#weight'] = 0;
+    $form['field_company_name']['widget'][0]['value']['#placeholder'] = t('PORTFOLIO COMPANY NAME');
+    $form['field_company_name']['widget'][0]['value']['#title'] = '';
+    $form['field_email'] = [
+      '#type' => 'textfield',
+      '#weight' => 99,
+    ];
+    $form['field_email']['#attributes']['placeholder'] = t('COMPANY EMAIL ADDRESS');
+
+    // Get the user inputted email value.
+    if (!empty($form_state->getUserInput('field_email'))) {
+      $field_email = $form_state->getUserInput('field_email');
+      $field_email = $field_email['field_email'];
+    }
+
+    // Unset account item and reset as hidden. programtically set these fields
+    // with the email field so that the format matches users
+    // logging in with SSO.
+    unset($form['account']['mail']);
+    unset($form['account']['name']);
+
+    // Don't show the welcome email sent field on the reg form.
+    unset($form['field_welcome_email_sent']);
+
+    // Create new hidden field with the stored value.
+    $form['account']['mail'] = [
+      '#type' => 'hidden',
+      '#value' => $field_email,
+    ];
+    $form['account']['name'] = [
+      '#type' => 'hidden',
+      '#value' => $field_email,
+    ];
+
+    $form['text']['#markup'] = t("<b><u>Account Request Process:</u></b>
+        <ol>
+            <li>Complete the account request form below and submit to us for further review.</li>
+            <li>If approved, you will receive a welcome e-mail containing further instructions regarding how to complete the account creation process.</li>
+            <li>Make sure that you add GPSPortal.Support@carlyle.com to your safe sender list to ensure that our communications to you are not blocked.</li>
+        </ol>
+        Note: Upon submitting the below form you will be re-directed to the login page. You will not be able to log in to the site until your account has been approved and activated.
+    ");
+
+    $form['#validate'][] = 'carlylegirms_clickthrough_register_submit';
+  }
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function carlylegirms_clickthrough_form_user_login_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  $form['name']['#attributes']['placeholder'] = t('USERNAME');
+  $form['name']['#title'] = '';
+  $form['name']['#description'] = '';
+  $form['pass']['#attributes']['placeholder'] = t('PASSWORD');
+  $form['pass']['#title'] = '';
+  $form['pass']['#description'] = '';
+}
+
+/**
+ * Email validation for custom email field on register form.
+ */
+function carlylegirms_clickthrough_register_submit($form, FormStateInterface $form_state) {
+  if ($form_state->hasValue('field_email')) {
+    $email = $form_state->getValue('field_email');
+
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+      $form_state->setErrorByName(
+        'field_email', t('You must enter a valid email address.')
+      );
+    }
+
+  }
+}
+
+/**
+ * Implements hook_theme().
+ */
+function carlylegirms_clickthrough_theme($existing, $type, $theme, $path) {
+  return [
+    'carlyle_nda' => [
+      'variables' => [
+        'label' => NULL,
+        'nda_sub_heading' => NULL,
+        'nda_body' => NULL,
+        'nda_agree' => NULL,
+      ],
+      'template' => 'carlyle-nda',
+    ],
+    'carlyle_login' => [
+      'variables' => [
+        'carlyle_login' => NULL,
+        'sso_route' => NULL,
+        'sso_options' => NULL,
+      ],
+      'template' => 'carlyle-login',
+    ],
+    'carlyle_register' => [
+      'variables' => [
+        'carlyle_register' => NULL,
+      ],
+      'template' => 'carlyle-register',
+    ],
+  ];
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter() for user profile form.
+ */
+function carlylegirms_clickthrough_form_user_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  $form['actions']['submit']['#submit'][] = '_carlylegirms_clickthrough_user_submit';
+}
+
+/**
+ * Submit callback for account profile page.
+ *
+ * @param array $form
+ *   Form array.
+ * @param \Drupal\Core\Form\FormStateInterface $form_state
+ *   Form state.
+ */
+function _carlylegirms_clickthrough_user_submit(array &$form, FormStateInterface $form_state) {
+  $account = \Drupal::currentUser();
+  /** @var \Drupal\user\Entity\User $user */
+  $user = $form_state->getFormObject()->getEntity();
+
+  if ($account->isAnonymous() || $account->id() === $user->id()) {
+    // User updating their own profile. Probably setting password for the first
+    // time. Redirect to home page. This will redirect to NDA if necessary.
+    $form_state->setRedirect('<front>');
+  }
+}
+
+/**
+ * Implements hook_page_attachments().
+ */
+function carlylegirms_clickthrough_page_attachments(array &$page)
+{
+  $page['#attached']['library'][] = 'carlylegirms_clickthrough/carlylegirms_click';
+}

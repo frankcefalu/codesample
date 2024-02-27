@@ -1,0 +1,246 @@
+<?php
+use Drupal\views\ViewExecutable;
+use Drupal\taxonomy\Entity\Term;
+
+// Pathauto menu path fix
+function carlyle_custom_entity_insert(Drupal\Core\Entity\EntityInterface $entity) {
+  global $pathauto_resave_node;
+
+  $entity_type = $entity->getEntityTypeId();
+  if ($entity_type === 'node') {
+    $pathauto_resave_node = $entity;
+  } else if ($entity_type === 'menu_link_content' && $pathauto_resave_node) {
+    // Clear the cache used in token_menu_link_load_all_parents().
+    drupal_static_reset('token_menu_link_load_all_parents');
+
+    \Drupal::service('pathauto.generator')->updateEntityAlias($pathauto_resave_node, 'update', array('force' => TRUE));
+    $pathauto_resave_node = FALSE;
+  }
+}
+
+// Pathauto menu path fix
+function carlyle_custom_entity_update(Drupal\Core\Entity\EntityInterface $entity) {
+  global $pathauto_resave_node;
+  $entity_type = $entity->getEntityTypeId();
+  if ($entity_type === 'node') {
+    $pathauto_resave_node = $entity;
+  } else if ($entity_type === 'menu_link_content' && $pathauto_resave_node) {
+    // Clear the cache used in token_menu_link_load_all_parents().
+    drupal_static_reset('token_menu_link_load_all_parents');
+
+    \Drupal::service('pathauto.generator')->updateEntityAlias($pathauto_resave_node, 'update', array('force' => TRUE));
+    $pathauto_resave_node = FALSE;
+  }
+}
+
+function carlyle_custom_entity_view_mode_alter(&$view_mode, Drupal\Core\Entity\EntityInterface $entity, $context) {
+  if ($entity->getEntityTypeId() == 'component') {
+    if ($entity->bundle() == 'report') {
+      $node = \Drupal::RouteMatch()->getParameter('node');
+      if (!empty($node) && !is_numeric($node)) {
+        $view_mode = 'report_' . $entity->get('field_report_type')->getString();
+      }
+    }
+  }
+}
+
+// used by CarlyleCustomLabelSortedFormatter
+function carlyle_custom_sortByTitle($a, $b) {
+    return strcmp($a["#title"], $b["#title"]);
+}
+
+function carlyle_custom_sortByPlainText($a, $b) {
+    return strcmp($a["#plain_text"], $b["#plain_text"]);
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function carlyle_form_search_form_alter(&$form, &$form_state) {
+  $form['help_link']['#access'] = FALSE;
+  $form['advanced']['#access'] = FALSE;
+  $form['basic']['keys']['#title'] = '';
+  $manager = \Drupal::languageManager();
+  if ($manager->getCurrentLanguage()->getId() == 'en') {
+    $form['advanced']['lang-fieldset']['language']['#default_value'] = [$manager->getCurrentLanguage()->getId()];
+  }
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function carlyle_form_search_block_form_alter(&$form, &$form_state) {
+  $manager = \Drupal::languageManager();
+
+  if ($manager->getCurrentLanguage()->getId() == 'en') {
+    $form['advanced-form'] = [
+      '#type' => 'hidden',
+      '#value' => 1,
+    ];
+    $form['f[0]'] = [
+      '#type' => 'hidden',
+      '#value' => 'language:' . $manager->getCurrentLanguage()->getId(),
+    ];
+  }
+}
+
+/**
+ * Implements hook_facets_query_alter
+ */
+function carlyle_custom_facets_query_alter(&$query) {
+  if (\Drupal::languageManager()->getCurrentLanguage()->getId() == 'en') {
+    $query->condition('i.langcode', 'en');
+  }
+  $query->condition('n.status', '1');
+  return $query;
+}
+
+/**
+ * Implements hook_token_info().
+ */
+function carlyle_custom_token_info() {
+  // Tokens for Bio nodes
+  $node['carlyle_bio_operating_executive'] = array(
+    'name' => t("Bio: Operating Executive"),
+    'description' => t("Adds 'operating-executives-advisors' to a path alias pattern for Operating Executives. Only intended for use in path alias patterns for Bio nodes."),
+  );
+
+  $node['carlyle_bio_base_path'] = array(
+    'name' => t("Bio: Base URL"),
+    'description' => t("Sets the first portion of the URL for bio nodes depending on whether member is an Operating Executive, or not."),
+  );
+
+  return array(
+    'tokens' => array('node' => $node),
+  );
+}
+
+/**
+ * Implements hook_tokens().
+ */
+function carlyle_custom_tokens($type, $tokens, array $data, array $options, \Drupal\Core\Render\BubbleableMetadata $bubbleable_metadata) {
+  $token_service = \Drupal::token();
+  
+  $replacements = array();
+  
+  if ($type == 'node' && !empty($data['node'])) {
+    /** @var \Drupal\node\NodeInterface $node */
+    $node = $data['node'];
+
+    foreach ($tokens as $name => $original) {
+      switch ($name) {
+        case 'carlyle_bio_base_path':
+          $replacements[$original] = '';
+
+          $node_type = $node->bundle();
+          if ($node_type == "bio") {
+            $operating_executive = $node->get('field_operating_executives')->get(0)->value;
+            if ($operating_executive) {
+              $replacements[$original] = 'corporate-overview';
+            }
+            else {
+              $replacements[$original] = 'about-carlyle';
+            }
+          }
+
+          break;
+        // Tokens for Bio nodes
+        case 'carlyle_bio_operating_executive':
+          $replacements[$original] = '';
+
+          $node_type = $node->bundle();
+          if ($node_type == "bio") {
+            $operating_executive = $node->get('field_operating_executives')->get(0)->value;
+            if ($operating_executive) {
+              $replacements[$original] = 'operating-executives-advisors';
+            }
+            else {
+              $replacements[$original] = 'team';
+            }
+          }
+          
+          break;
+      }
+    }
+  }
+  
+  return $replacements;
+}
+
+/**
+ * Implements hook_page_attachments().
+ */
+function carlyle_custom_page_attachments(&$attachments) {
+  // Add Bugherd embed code to the site in the Dev and Stage environments only.
+  if (isset($_ENV['AH_SITE_ENVIRONMENT']) && in_array($_ENV['AH_SITE_ENVIRONMENT'], array('dev', 'test'))) {
+    $attachments['#attached']['html_head'][] = [
+      [
+        '#type' => 'html_tag',
+        '#tag' => 'script',
+        '#value' => "(function (d, t) { var bh = d.createElement(t), s = d.getElementsByTagName(t)[0]; bh.type = 'text/javascript'; bh.src = 'https://www.bugherd.com/sidebarv2.js?apikey=5ioiefbse5nrjxtbvkdpnw'; s.parentNode.insertBefore(bh, s); })(document, 'script');",
+        '#weight' => 10,
+      ],
+      "bugherd",
+    ];
+  }
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_insert() for node entities.
+ */
+function carlyle_custom_node_insert(\Drupal\node\NodeInterface $node) {
+  if ($node->getType() == 'whitepaper') {
+    $node->set('field_link', 'entity:node/' . $node->id());
+    $node->setNewRevision(FALSE);
+    $node->save();
+  }
+}
+
+/**
+ * Implements hook_views_pre_render().
+ *
+ * Customize board of directors results.
+ */
+function carlyle_custom_views_pre_render(ViewExecutable $view) {
+  if ($view->id() == "bio_board_of_directors") {
+    // Array for CEO.
+    $ceo_arr = [];
+    // Array for co-founders.
+    $cf_arr = [];
+    // Array for other board of directors.
+    $director = [];
+    foreach ($view->result as &$row) {
+      $term_id = $row->taxonomy_term_field_data_node__field_position_tid;
+      $term_name = Term::load($term_id)->get('name')->value;
+      if(strpos($term_name, "Chief Executive Officer") !== FALSE) {
+        $ceo_arr[] = $row;
+      }
+      elseif(strpos($term_name, "Co-Founder") !== FALSE) {
+        $cf_arr[] = $row;
+      }
+      else{
+        $director[] = $row;
+      }
+    }
+    // Swapping co-founders.
+    $key_daniel = NULL;
+    $key_rubenstien = NULL;
+    foreach ($cf_arr as $key => $val) {
+      if ($val->node__field_name_for_sorting_field_name_for_sorting_value == "D'Aniello, Daniel A.") {
+        $key_daniel = $key;
+      }elseif ($val->node__field_name_for_sorting_field_name_for_sorting_value == "Rubenstein, David M.") {
+        $key_rubenstien = $key;
+      }
+    }
+    //Swapping last two arrays.
+    if (!is_null($key_daniel) && !is_null($key_rubenstien)) {
+      $temp = $cf_arr[$key_daniel];
+      $cf_arr[$key_daniel] = $cf_arr[$key_rubenstien];
+      $cf_arr[$key_rubenstien] = $temp;
+    }
+    array_multisort( array_column($director, "node__field_name_for_sorting_field_name_for_sorting_value"), SORT_ASC, $director);
+    $set_arr = array_merge($ceo_arr, $cf_arr, $director);
+    $view->result = $set_arr;
+    $view->total_rows = count($set_arr);
+  }
+}

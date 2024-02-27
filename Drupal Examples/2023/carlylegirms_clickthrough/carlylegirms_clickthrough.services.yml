@@ -1,0 +1,10 @@
+services:
+  carlyle_agreement_subscriber:
+    class: '\Drupal\carlylegirms_clickthrough\EventSubscriber\CarlyleAgreementSubscriber'
+    arguments: ['@current_user']
+    tags:
+      - { name: event_subscriber }
+  carlyle.route_subscriber:
+    class: Drupal\carlylegirms_clickthrough\Routing\CarlyleRouteSubscriber
+    tags:
+      - { name: event_subscriber }

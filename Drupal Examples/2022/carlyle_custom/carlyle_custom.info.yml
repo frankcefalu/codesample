@@ -1,0 +1,6 @@
+name: Carlyle Custom
+type: module
+description: 'Generic custom code for Carlyle D8'
+core: 8.x
+package: Carlyle
+core_version_requirement: ^8 || ^9

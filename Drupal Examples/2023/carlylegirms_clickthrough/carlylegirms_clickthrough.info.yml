@@ -1,0 +1,5 @@
+name: Carlyle Girms Clickthrough Agreement
+type: module
+description: 'Functionality for the carlylegirms clickthrough agreement.'
+package: Carlyle
+core_version_requirement: ^9
